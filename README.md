@@ -3,6 +3,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![discord.py 2.x](https://img.shields.io/badge/discord.py-2.x-5865F2.svg)](https://discordpy.readthedocs.io/)
 [![Lavalink v4](https://img.shields.io/badge/Lavalink-v4-orange.svg)](https://github.com/lavalink-devs/Lavalink)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Tests Passing](https://img.shields.io/badge/tests-19%20passed-brightgreen.svg)]()
 
@@ -277,6 +278,20 @@ docker-compose up -d --build
 # Inspect logs
 docker-compose logs -f
 ```
+
+---
+
+### 5. 🚆 24/7 Cloud Hosting on Railway (Recommended)
+
+HarmoniX includes native **Railway** support with an all-in-one multi-stage container that runs **both Lavalink v4 (Java 21) and the Discord bot (Python 3.11)** together:
+
+1. Push your code to your GitHub account (`git push origin main`).
+2. Go to [Railway](https://railway.com) and click **+ New Project** → **Deploy from GitHub repo**.
+3. Select your repository.
+4. Add the **`DISCORD_TOKEN`** variable in the **Variables** tab.
+5. (Optional) Under **Volumes**, add a persistent volume mounted to `/app/data` to persist playlists and settings across deploys.
+
+👉 **For detailed instructions and tips, read the [Railway Deployment Guide](RAILWAY.md).**
 
 ---
 
