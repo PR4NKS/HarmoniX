@@ -91,8 +91,8 @@ class Settings(BaseSettings):
         description="Maximum tracks importable from a single playlist."
     )
     DEFAULT_SEARCH_SOURCE: str = Field(
-        default="ytmsearch",
-        description="Default search prefix (e.g. ytmsearch, scsearch, ytsearch)."
+        default="scsearch",
+        description="Default search prefix (e.g. scsearch, ytmsearch, ytsearch)."
     )
     AUTO_LEAVE_SECONDS: int = Field(
         default=180,

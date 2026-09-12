@@ -38,27 +38,37 @@ class YouTubeSource(BaseAudioSource):
         if is_valid_url(query_str):
             results = await wavelink.Playable.search(query_str)
         else:
+            # Determine search order based on configuration
+            if "sc" in self.default_search_type.lower():
+                primary_source = wavelink.TrackSource.SoundCloud
+                secondary_source = wavelink.TrackSource.YouTubeMusic
+            else:
+                primary_source = wavelink.TrackSource.YouTubeMusic
+                secondary_source = wavelink.TrackSource.SoundCloud
+
             try:
-                results = await wavelink.Playable.search(query_str, source=wavelink.TrackSource.YouTubeMusic)
-            except Exception:
+                results = await wavelink.Playable.search(query_str, source=primary_source)
+            except Exception as err:
+                logger.warning("Primary search for '%s' (%s) failed: %s", query_str, primary_source, err)
                 results = None
 
             if not results:
                 try:
-                    results = await wavelink.Playable.search(query_str, source=wavelink.TrackSource.SoundCloud)
-                except Exception:
+                    results = await wavelink.Playable.search(query_str, source=secondary_source)
+                except Exception as err:
+                    logger.warning("Secondary search for '%s' (%s) failed: %s", query_str, secondary_source, err)
                     results = None
 
         if not results:
             return []
 
         if isinstance(results, wavelink.Playlist):
-            playlist_name = getattr(results, "name", "YouTube Playlist")
+            playlist_name = getattr(results, "name", "Playlist")
             tracks = [
                 HarmoniXTrack(
                     playable=track,
                     requester=requester,
-                    source_name="youtube",
+                    source_name=getattr(track, "source", "unknown"),
                 )
                 for track in results
             ]
@@ -71,7 +81,7 @@ class YouTubeSource(BaseAudioSource):
                 HarmoniXTrack(
                     playable=track,
                     requester=requester,
-                    source_name="youtube",
+                    source_name=getattr(track, "source", "unknown"),
                 )
             )
         return tracks

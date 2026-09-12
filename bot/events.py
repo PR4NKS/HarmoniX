@@ -58,26 +58,58 @@ def setup_events(bot: "HarmoniXBot") -> None:  # type: ignore
         if not player:
             return
 
-        source = getattr(payload.track, "source", "unknown")
-        logger.warning("Audio playback error for %s (source: %s): %s", payload.track.title, source, payload.exception)
+        source = str(getattr(payload.track, "source", "unknown")).lower()
+        title = getattr(payload.track, "title", "Unknown Track")
+        author = getattr(payload.track, "author", "")
+        logger.warning("Audio playback error for %s (source: %s): %s", title, source, payload.exception)
 
-        # If YouTube blocks stream, automatically fallback to SoundCloud
-        if source == "youtube":
+        # If YouTube / YouTube Music blocks the stream, automatically fallback to SoundCloud
+        if "youtube" in source or source in ("unknown", "http", ""):
             try:
-                fallback_query = f"{payload.track.title} {payload.track.author}".strip()
-                logger.info("Attempting automatic SoundCloud stream fallback for: %s", fallback_query)
-                fallback_results = await wavelink.Playable.search(fallback_query, source=wavelink.TrackSource.SoundCloud)
+                import re
+                clean_title = re.sub(r'[\(\[\{].*?[\)\]\}]', '', title)
+                clean_title = re.sub(r'\s*-\s*Topic', '', clean_title, flags=re.IGNORECASE).strip()
+                clean_author = re.sub(r'\s*-\s*Topic', '', author, flags=re.IGNORECASE).strip()
+
+                queries_to_try = []
+                if clean_title and clean_author and clean_author.lower() not in clean_title.lower():
+                    queries_to_try.append(f"{clean_title} {clean_author}")
+                if clean_title:
+                    queries_to_try.append(clean_title)
+                queries_to_try.append(title)
+
+                fallback_results = None
+                for q in queries_to_try:
+                    try:
+                        logger.info("Attempting automatic SoundCloud stream fallback for: '%s'", q)
+                        fallback_results = await wavelink.Playable.search(q, source=wavelink.TrackSource.SoundCloud)
+                        if fallback_results:
+                            break
+                    except Exception as search_err:
+                        logger.debug("Fallback search '%s' failed: %s", q, search_err)
+                        continue
+
                 if fallback_results:
                     target_track = fallback_results[0]
                     from music.track import HarmoniXTrack
                     player.current_harmoni_track = HarmoniXTrack(
                         playable=target_track,
                         requester=player.current_harmoni_track.requester if player.current_harmoni_track else None,
-                        album="SoundCloud Stream",
+                        album="SoundCloud Fallback",
                         source_name="soundcloud",
                     )
                     await player.play(target_track, add_history=False)
                     asyncio.create_task(player.refresh_controller())
+
+                    if player.text_channel:
+                        try:
+                            embed = create_success_embed(
+                                "Playback Recovered",
+                                f"Recovered stream for **{target_track.title}** via SoundCloud.",
+                            )
+                            await player.text_channel.send(embed=embed)
+                        except Exception:
+                            pass
                     return
             except Exception as fb_err:
                 logger.error("SoundCloud fallback failed: %s", fb_err)
@@ -86,7 +118,7 @@ def setup_events(bot: "HarmoniXBot") -> None:  # type: ignore
             try:
                 embed = create_error_embed(
                     "Playback Failed",
-                    f"An error occurred while streaming **{payload.track.title}**. Skipping to next track...",
+                    f"An error occurred while streaming **{title}**. Skipping to next track...",
                 )
                 await player.text_channel.send(embed=embed)
             except Exception:

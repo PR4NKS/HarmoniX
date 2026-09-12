@@ -50,9 +50,10 @@ plugins:
       - MUSIC
       - ANDROID_VR
       - WEBEMBEDDED
-      - TVHTML5SIMPLY
       - IOS
       - MWEB
+      - ANDROID
+      - WEB
 
 metrics:
   prometheus:
