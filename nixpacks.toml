@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ["python310", "jdk21", "ffmpeg", "curl"]
+
+[phases.install]
+cmds = [
+    "pip install --no-cache-dir -r requirements.txt",
+    "curl -fSL -o Lavalink.jar https://github.com/lavalink-devs/Lavalink/releases/latest/download/Lavalink.jar"
+]
+
+[start]
+cmd = "bash entrypoint.sh"

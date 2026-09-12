@@ -1,20 +1,55 @@
 #!/bin/bash
-set -eo pipefail
+set -e
+
+# Change directory to the root of the project
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
 echo "=========================================================="
 echo "    HarmoniX Discord Music Bot - Railway Launchpad       "
 echo "=========================================================="
 
-mkdir -p /app/data /app/logs /app/plugins
+# 1. Check for DISCORD_TOKEN
+if [ -z "$DISCORD_TOKEN" ] || [ "$DISCORD_TOKEN" = "your_discord_bot_token_here" ]; then
+    echo ""
+    echo "=========================================================="
+    echo "[CRITICAL ERROR] DISCORD_TOKEN is missing or not configured!"
+    echo "=========================================================="
+    echo "How to fix this in Railway:"
+    echo "1. Open your Railway project dashboard: https://railway.com"
+    echo "2. Click on your HarmoniX service."
+    echo "3. Go to the 'Variables' tab."
+    echo "4. Click '+ New Variable' and add:"
+    echo "     Variable Name : DISCORD_TOKEN"
+    echo "     Value         : (Your actual Discord bot token)"
+    echo "5. Railway will automatically redeploy and start the bot!"
+    echo "=========================================================="
+    echo ""
+    exit 1
+fi
 
-# Setup Java memory allocation (default 512M suitable for 1GB containers)
+mkdir -p data logs plugins
+
+# 2. Check for Lavalink.jar
+if [ ! -f "Lavalink.jar" ]; then
+    echo "Downloading Lavalink v4 directly..."
+    curl -fSL -o Lavalink.jar https://github.com/lavalink-devs/Lavalink/releases/latest/download/Lavalink.jar
+fi
+
+# 3. Setup Java memory
 JAVA_OPTS=${JAVA_OPTS:-"-Xmx512M -XX:+UseG1GC"}
+JAVA_CMD="java"
+if [ -n "$JAVA_HOME" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+    JAVA_CMD="$JAVA_HOME/bin/java"
+fi
 
-# If Railway provides a PORT environment variable, run an optional lightweight HTTP health endpoint
+LAVALINK_PASS="${LAVALINK_PASSWORD:-youshallnotpass}"
+
+# If Railway provides a PORT environment variable, run an optional lightweight HTTP health responder
 HEALTH_PID=""
 if [ -n "$PORT" ]; then
     echo "Railway PORT=$PORT detected. Starting lightweight HTTP health responder..."
-    python -c "
+    python3 -c "
 import http.server, socketserver, os
 port = int(os.environ.get('PORT', 8080))
 class HealthHandler(http.server.SimpleHTTPRequestHandler):
@@ -31,29 +66,30 @@ with socketserver.TCPServer(('', port), HealthHandler) as httpd:
     HEALTH_PID=$!
 fi
 
+# 4. Start Lavalink audio server in background
 echo "[1/2] Starting Lavalink v4 Audio Server..."
-java $JAVA_OPTS -jar /app/Lavalink.jar &
+$JAVA_CMD $JAVA_OPTS -jar Lavalink.jar &
 LAVALINK_PID=$!
 
-echo "Waiting for Lavalink to be ready on port 2333..."
-MAX_WAIT=60
-WAITED=0
-while ! curl -s -f http://127.0.0.1:2333/version > /dev/null 2>&1; do
-    sleep 1
-    WAITED=$((WAITED + 1))
-    if [ $WAITED -ge $MAX_WAIT ]; then
-        echo "[ERROR] Lavalink failed to respond on port 2333 after $MAX_WAIT seconds."
-        kill $LAVALINK_PID 2>/dev/null || true
-        [ -n "$HEALTH_PID" ] && kill $HEALTH_PID 2>/dev/null || true
-        exit 1
+# Wait for Lavalink port 2333 with Authorization header (up to 30 seconds)
+echo "Waiting for Lavalink to initialize on port 2333..."
+for i in {1..30}; do
+    if curl -s -f -H "Authorization: $LAVALINK_PASS" http://127.0.0.1:2333/version > /dev/null 2>&1; then
+        LAVALINK_VER=$(curl -s -H "Authorization: $LAVALINK_PASS" http://127.0.0.1:2333/version)
+        echo "[SUCCESS] Lavalink v4 is ready! (Version: $LAVALINK_VER)"
+        break
     fi
+    sleep 1
 done
 
-LAVALINK_VER=$(curl -s http://127.0.0.1:2333/version)
-echo "[SUCCESS] Lavalink v4 is ready! (Version: $LAVALINK_VER)"
+# 5. Start HarmoniX Python Bot
+PYTHON_CMD="python3"
+if ! command -v python3 > /dev/null 2>&1; then
+    PYTHON_CMD="python"
+fi
 
-echo "[2/2] Starting HarmoniX Discord Bot..."
-python main.py &
+echo "[2/2] Starting HarmoniX Discord Bot (main.py)..."
+$PYTHON_CMD main.py &
 BOT_PID=$!
 
 # Graceful termination handler
@@ -70,9 +106,9 @@ cleanup() {
 
 trap cleanup SIGINT SIGTERM
 
-# Wait for any process to exit
-wait -n "$BOT_PID" "$LAVALINK_PID"
+# Keep the container alive while the bot is running
+wait "$BOT_PID"
 EXIT_CODE=$?
 
-echo "A process exited with code $EXIT_CODE. Initiating cleanup..."
+echo "HarmoniX bot process exited with code $EXIT_CODE. Cleaning up..."
 cleanup
