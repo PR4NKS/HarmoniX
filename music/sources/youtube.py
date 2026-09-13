@@ -6,7 +6,7 @@ import discord
 import wavelink
 from .base import BaseAudioSource, PlaylistResult
 from music.track import HarmoniXTrack
-from utils.validators import is_youtube_url, is_valid_url
+from utils.validators import is_youtube_url, is_valid_url, sanitize_youtube_url
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -34,23 +34,22 @@ class YouTubeSource(BaseAudioSource):
         requester: Optional[discord.Member] = None,
         max_results: int = 10,
     ) -> Union[List[HarmoniXTrack], PlaylistResult]:
-        query_str = query.strip()
+        query_str = sanitize_youtube_url(query.strip())
 
-        if is_valid_url(query_str):
-            try:
-                results = await wavelink.Playable.search(query_str)
-            except Exception as e:
-                logger.warning("Lavalink direct URL resolution failed for %s: %s", query_str, e)
-                results = None
+        # 1. Direct YouTube URLs (Single Video or Playlist)
+        if is_youtube_url(query_str):
+            from services.stream_server import get_stream_server
+            server = get_stream_server()
 
-            # Fallback to direct audio stream extraction via yt-dlp for YouTube URLs
-            if not results and ("youtube.com" in query_str or "youtu.be" in query_str):
+            # Check if this is a YouTube playlist
+            if "playlist?list=" in query_str:
                 try:
                     import yt_dlp
+                    loop = asyncio.get_running_loop()
 
-                    def extract():
+                    def extract_pl():
                         ydl_opts = {
-                            "format": "bestaudio/best",
+                            "extract_flat": True,
                             "quiet": True,
                             "no_warnings": True,
                             "skip_download": True,
@@ -58,20 +57,79 @@ class YouTubeSource(BaseAudioSource):
                         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                             return ydl.extract_info(query_str, download=False)
 
-                    info = await asyncio.to_thread(extract)
-                    stream_url = info.get("url")
-                    if stream_url:
-                        results = await wavelink.Playable.search(stream_url)
-                        if results:
-                            # Keep original title and author
-                            for r in results:
-                                if hasattr(r, "_title") and info.get("title"):
-                                    r._title = info["title"]
-                                if hasattr(r, "_author") and info.get("uploader"):
-                                    r._author = info["uploader"]
-                except Exception as yt_err:
-                    logger.warning("yt-dlp fallback extraction for %s failed: %s", query_str, yt_err)
+                    pl_data = await loop.run_in_executor(None, extract_pl)
+                    if pl_data and "entries" in pl_data:
+                        pl_title = pl_data.get("title", "YouTube Playlist")
+                        entries = [e for e in pl_data["entries"] if e and e.get("id")][:max_results]
+                        resolved_tracks = []
+                        for entry in entries:
+                            vid = entry.get("id")
+                            if server and server.is_running:
+                                t = await server.resolve_playable(vid, requester=requester)
+                                if t:
+                                    resolved_tracks.append(t)
+                                    continue
+                            # Fallback to direct search if stream server not ready
+                            try:
+                                res = await wavelink.Playable.search(f"https://www.youtube.com/watch?v={vid}")
+                                if res:
+                                    resolved_tracks.append(
+                                        HarmoniXTrack(
+                                            playable=res[0],
+                                            requester=requester,
+                                            source_name="youtube",
+                                        )
+                                    )
+                            except Exception:
+                                pass
+                        if resolved_tracks:
+                            return PlaylistResult(name=pl_title, tracks=resolved_tracks)
+                except Exception as pl_err:
+                    logger.warning("Failed extracting YouTube playlist with yt-dlp: %s", pl_err)
+
+            # Single Video YouTube URL - prioritize stream server to guarantee 100% playback
+            if server and server.is_running:
+                try:
+                    stream_track = await server.resolve_playable(query_str, requester=requester)
+                    if stream_track:
+                        return [stream_track]
+                except Exception as stream_err:
+                    logger.warning("Stream server direct resolution error: %s", stream_err)
+
+            # Fallback to Lavalink direct search if stream server unavailable
+            try:
+                results = await wavelink.Playable.search(query_str)
+                if results:
+                    tracks = [
+                        HarmoniXTrack(
+                            playable=r,
+                            requester=requester,
+                            source_name=getattr(r, "source", "unknown"),
+                        )
+                        for r in results[:max_results]
+                    ]
+                    return tracks
+            except Exception as e:
+                logger.warning("Lavalink direct URL resolution failed for %s: %s", query_str, e)
+                results = None
+
+        elif is_valid_url(query_str):
+            try:
+                results = await wavelink.Playable.search(query_str)
+            except Exception as e:
+                logger.warning("Lavalink direct URL resolution failed for %s: %s", query_str, e)
+                results = None
         else:
+            from services.stream_server import get_stream_server
+            server = get_stream_server()
+            if server and server.is_running:
+                try:
+                    stream_track = await server.resolve_playable(query_str, requester=requester)
+                    if stream_track:
+                        return [stream_track]
+                except Exception as stream_err:
+                    logger.debug("Stream server search error for '%s': %s", query_str, stream_err)
+
             # Determine search order based on configuration
             if "sc" in self.default_search_type.lower():
                 primary_source = wavelink.TrackSource.SoundCloud

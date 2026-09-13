@@ -99,9 +99,17 @@ class SpotifySource(BaseAudioSource):
         token = await self._get_access_token()
 
         if token:
-            return await self._resolve_api(item_type, item_id, token, requester, max_results)
-        else:
-            return await self._resolve_oembed(query, item_type, requester)
+            result = await self._resolve_api(item_type, item_id, token, requester, max_results)
+            if result:
+                return result
+
+        # Embed scraper fallback (supports mixes, curated playlists, albums, and tracks without API tokens)
+        embed_result = await self._scrape_embed(query, item_type, item_id, requester, max_results)
+        if embed_result:
+            return embed_result
+
+        # Final fallback: oembed
+        return await self._resolve_oembed(query, item_type, requester)
 
     async def _resolve_api(
         self,
@@ -174,6 +182,64 @@ class SpotifySource(BaseAudioSource):
 
         return []
 
+    async def _scrape_embed(
+        self,
+        url: str,
+        item_type: str,
+        item_id: str,
+        requester: Optional[discord.Member],
+        max_results: int,
+    ) -> Union[List[HarmoniXTrack], PlaylistResult, None]:
+        """Scrape Spotify public embed page to extract tracks without requiring API tokens."""
+        session = await self._get_session()
+        embed_url = f"https://open.spotify.com/embed/{item_type}/{item_id}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        try:
+            async with session.get(embed_url, headers=headers, timeout=10) as resp:
+                if resp.status != 200:
+                    return None
+                html = await resp.text()
+
+            match = re.search(r'<script\s+id=[\'"]__NEXT_DATA__[\'"]\s+type=[\'"]application/json[\'"]>(.*?)</script>', html)
+            if not match:
+                return None
+
+            import json
+            payload = json.loads(match.group(1))
+            entity = payload.get("props", {}).get("pageProps", {}).get("state", {}).get("data", {}).get("entity", {})
+            if not entity:
+                return None
+
+            name = entity.get("name") or entity.get("title") or "Spotify Playlist"
+            track_list = entity.get("trackList", [])
+
+            if track_list:
+                raw_tracks = []
+                for item in track_list[:max_results]:
+                    t_title = item.get("title")
+                    t_artist = item.get("subtitle", "")
+                    if t_title:
+                        raw_tracks.append({
+                            "title": t_title,
+                            "artist": t_artist,
+                            "album": name,
+                        })
+                resolved_tracks = await self._batch_resolve(raw_tracks, requester)
+                if resolved_tracks:
+                    return PlaylistResult(name=name, tracks=resolved_tracks)
+            elif item_type == "track":
+                title = entity.get("title") or entity.get("name")
+                artists = entity.get("artists", [])
+                artist_name = artists[0].get("name", "") if artists else entity.get("subtitle", "")
+                if title:
+                    track = await self._search_playable(title=title, artist=artist_name, requester=requester)
+                    return [track] if track else None
+        except Exception as e:
+            logger.warning("Spotify embed scraper error for %s: %s", url, e)
+        return None
+
     async def _resolve_oembed(
         self,
         url: str,
@@ -207,7 +273,21 @@ class SpotifySource(BaseAudioSource):
         requester: Optional[discord.Member] = None,
     ) -> Optional[HarmoniXTrack]:
         """Search for a track via Lavalink audio engine with Spotify metadata."""
-        query = f"ytmsearch:{title} {artist}".strip()
+        from services.stream_server import get_stream_server
+        server = get_stream_server()
+
+        query_text = f"{title} {artist}".strip()
+        if server and server.is_running:
+            try:
+                track = await server.resolve_playable(query_text, requester=requester)
+                if track:
+                    track.album = album or "Spotify Track"
+                    track.source_name = "spotify"
+                    return track
+            except Exception as e:
+                logger.debug("Stream server search fallback for Spotify track %s: %s", title, e)
+
+        query = f"ytmsearch:{query_text}"
         try:
             results = await wavelink.Playable.search(query)
             if results:

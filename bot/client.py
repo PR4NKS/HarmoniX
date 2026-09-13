@@ -14,6 +14,7 @@ from database.repository import MusicRepository
 from music.manager import MusicManager
 from services.lyrics import LyricsService
 from services.statistics import StatisticsService
+from services.stream_server import StreamServer
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -47,10 +48,21 @@ class HarmoniXBot(commands.Bot):
         self.music = MusicManager(self)
         self.lyrics = LyricsService(genius_token=self.settings.GENIUS_API_TOKEN)
         self.stats = StatisticsService(self)
+        self.stream_server = StreamServer(
+            host="0.0.0.0",
+            port=self.settings.STREAM_PROXY_PORT,
+            callback_host=self.settings.STREAM_PROXY_HOST,
+        )
 
     async def setup_hook(self) -> None:
         """Asynchronous initialization before gateway login."""
         logger.info("Initializing HarmoniX core infrastructure...")
+
+        # 0. Start local audio stream proxy
+        try:
+            await self.stream_server.start()
+        except Exception as e:
+            logger.warning("Could not start audio stream proxy: %s", e)
 
         # 1. Connect Database
         await self.db_manager.connect()
@@ -106,7 +118,11 @@ class HarmoniXBot(commands.Bot):
             except Exception as e:
                 logger.debug("Error disconnecting player on close: %s", e)
 
-        # Close sessions and database
+        # Close sessions, stream server and database
+        try:
+            await self.stream_server.stop()
+        except Exception:
+            pass
         await self.music.close()
         await self.lyrics.close()
         await self.db_manager.close()

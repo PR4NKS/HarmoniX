@@ -1,0 +1,38 @@
+# Git and version control
+.git
+.gitignore
+.github
+
+# Environment and secrets
+.env
+.env.*
+*.env
+
+# Python cache and build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+tests/
+
+# Local databases and logs (persisted via Docker volumes)
+data/*.sqlite3*
+data/*
+logs/*
+*.log
+
+# Temp and IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+scratch/
+.system_generated/

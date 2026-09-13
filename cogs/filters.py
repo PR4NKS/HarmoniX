@@ -23,6 +23,19 @@ class FiltersCog(commands.Cog, name="Filters"):
 
     filter_group = app_commands.Group(name="filter", description="Audio effects and equalizer presets")
 
+    @filter_group.command(name="hifi", description="Enable High-Fidelity Studio Audio mode with crystal clear sound.")
+    async def hifi(self, interaction: discord.Interaction) -> None:
+        check_voice_state(interaction, require_bot=True, require_same_channel=True)
+        player: Optional[HarmoniXPlayer] = interaction.guild.voice_client  # type: ignore
+        if not player:
+            raise BotNotInVoiceChannel()
+
+        await player.apply_filter_preset(FilterPreset.HIFI)
+        await interaction.response.send_message(
+            embed=create_success_embed("✨ Hi-Fi Studio Mode", "Enabled High-Fidelity Studio Master equalizer for crystal-clear sound.")
+        )
+        await player.refresh_controller()
+
     @filter_group.command(name="bassboost", description="Apply bass boost effect to audio.")
     @app_commands.describe(level="Intensity level of bass boost")
     @app_commands.choices(

@@ -35,6 +35,7 @@ class FilterSelect(ui.Select):
     def __init__(self, current_preset: FilterPreset):
         options = [
             discord.SelectOption(label="Normal / Flat", value=FilterPreset.FLAT.value, emoji="🎚️"),
+            discord.SelectOption(label="Hi-Fi / Studio Master", value=FilterPreset.HIFI.value, emoji="✨", description="Crystal-clear high-fidelity studio sound"),
             discord.SelectOption(label="Bass Boost (Low)", value=FilterPreset.BASSBOOST_LOW.value, emoji="🔊"),
             discord.SelectOption(label="Bass Boost (Medium)", value=FilterPreset.BASSBOOST_MED.value, emoji="💥"),
             discord.SelectOption(label="Bass Boost (High)", value=FilterPreset.BASSBOOST_HIGH.value, emoji="💣"),

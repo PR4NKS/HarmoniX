@@ -11,7 +11,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     LAVALINK_URI="http://127.0.0.1:2333" \
-    LAVALINK_PASSWORD="youshallnotpass"
+    LAVALINK_PASSWORD="youshallnotpass" \
+    STREAM_PROXY_HOST="127.0.0.1" \
+    STREAM_PROXY_PORT=2334
 
 # Install Python 3, pip, FFmpeg, curl, and build libraries
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -40,6 +42,9 @@ COPY . .
 RUN mkdir -p /app/data /app/logs /app/plugins \
     && sed -i 's/\r$//' /app/entrypoint.sh \
     && chmod +x /app/entrypoint.sh
+
+# Expose Lavalink (2333), internal Stream Proxy (2334), and optional Web/Health (8080)
+EXPOSE 2333 2334 8080
 
 # Start entrypoint script via CMD (standard for Railway / Docker cloud runners)
 CMD ["/app/entrypoint.sh"]

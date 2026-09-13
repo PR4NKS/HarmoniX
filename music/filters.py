@@ -7,6 +7,7 @@ import wavelink
 
 class FilterPreset(Enum):
     FLAT = "flat"
+    HIFI = "hifi"
     BASSBOOST_LOW = "bassboost_low"
     BASSBOOST_MED = "bassboost_med"
     BASSBOOST_HIGH = "bassboost_high"
@@ -22,6 +23,24 @@ class FilterPreset(Enum):
 
 
 # Equalizer band definitions (-0.25 to 1.0 gain)
+HIFI_STUDIO_BANDS = [
+    {"band": 0, "gain": 0.08},
+    {"band": 1, "gain": 0.06},
+    {"band": 2, "gain": 0.03},
+    {"band": 3, "gain": 0.00},
+    {"band": 4, "gain": -0.02},
+    {"band": 5, "gain": -0.02},
+    {"band": 6, "gain": 0.00},
+    {"band": 7, "gain": 0.02},
+    {"band": 8, "gain": 0.04},
+    {"band": 9, "gain": 0.06},
+    {"band": 10, "gain": 0.08},
+    {"band": 11, "gain": 0.10},
+    {"band": 12, "gain": 0.12},
+    {"band": 13, "gain": 0.12},
+    {"band": 14, "gain": 0.10},
+]
+
 BASSBOOST_LOW_BANDS = [
     {"band": 0, "gain": 0.15},
     {"band": 1, "gain": 0.10},
@@ -77,6 +96,9 @@ def apply_preset(filters: wavelink.Filters, preset: FilterPreset) -> wavelink.Fi
 
     if preset == FilterPreset.FLAT:
         return filters
+
+    elif preset == FilterPreset.HIFI:
+        filters.equalizer.set(bands=HIFI_STUDIO_BANDS)
 
     elif preset == FilterPreset.BASSBOOST_LOW:
         filters.equalizer.set(bands=BASSBOOST_LOW_BANDS)

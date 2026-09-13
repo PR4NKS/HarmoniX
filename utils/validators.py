@@ -46,6 +46,16 @@ def is_youtube_url(url: str) -> bool:
     return bool(YOUTUBE_REGEX.match(url.strip()))
 
 
+def sanitize_youtube_url(url: str) -> str:
+    """Strip automated YouTube Mix / Radio (list=RD... or list=UL...) parameters from a video URL."""
+    clean = url.strip()
+    if ("youtube.com" in clean or "youtu.be" in clean) and ("v=" in clean or "youtu.be/" in clean):
+        clean = re.sub(r"[&?]list=(?:RD|UL)[a-zA-Z0-9_-]+", "", clean)
+        clean = re.sub(r"[&?]index=\d+", "", clean)
+        clean = re.sub(r"[&?]$", "", clean)
+    return clean
+
+
 def is_spotify_url(url: str) -> bool:
     """Check if a URL points to Spotify."""
     return bool(SPOTIFY_REGEX.match(url.strip()))

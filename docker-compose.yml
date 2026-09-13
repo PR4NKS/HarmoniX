@@ -1,38 +1,23 @@
 version: "3.8"
 
 services:
-  lavalink:
-    image: ghcr.io/lavalink-devs/lavalink:4
-    container_name: harmonix-lavalink
-    restart: unless-stopped
-    ports:
-      - "2333:2333"
-    environment:
-      - _JAVA_OPTIONS=-Xmx1G
-    volumes:
-      - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
-      - ./lavalink/plugins:/opt/Lavalink/plugins
-      - ./lavalink/logs:/opt/Lavalink/logs
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:2333/version || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
-
-  bot:
+  harmonix:
     build: .
     container_name: harmonix-bot
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      - LAVALINK_URI=http://lavalink:2333
+      - LAVALINK_URI=http://127.0.0.1:2333
+      - LAVALINK_PASSWORD=youshallnotpass
+      - STREAM_PROXY_HOST=127.0.0.1
+      - STREAM_PROXY_PORT=2334
       - DATABASE_PATH=data/bot_database.sqlite3
       - LOG_FILE=logs/bot.log
-    depends_on:
-      lavalink:
-        condition: service_healthy
+    ports:
+      - "2333:2333"  # Lavalink audio server
+      - "2334:2334"  # Internal stream proxy
+      - "8080:8080"  # Cloud / Railway health responder
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs

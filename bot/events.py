@@ -63,47 +63,33 @@ def setup_events(bot: "HarmoniXBot") -> None:  # type: ignore
         author = getattr(payload.track, "author", "")
         logger.warning("Audio playback error for %s (source: %s): %s", title, source, payload.exception)
 
-        # Attempt seamless stream recovery using SoundCloud search
+        # Attempt seamless YouTube stream recovery via internal stream proxy
         try:
             import re
+            from services.stream_server import get_stream_server
 
-            clean_title = re.sub(r'[\(\[\{].*?[\)\]\}]', '', title)
-            clean_title = re.sub(r'\s*-\s*Topic', '', clean_title, flags=re.IGNORECASE).strip()
-            clean_author = re.sub(r'\s*-\s*Topic', '', author, flags=re.IGNORECASE).strip()
+            server = get_stream_server()
+            if server and server.is_running:
+                clean_title = re.sub(r'[\(\[\{].*?[\)\]\}]', '', title)
+                clean_title = re.sub(r'\s*-\s*Topic', '', clean_title, flags=re.IGNORECASE).strip()
+                clean_author = re.sub(r'\s*-\s*Topic', '', author, flags=re.IGNORECASE).strip()
 
-            queries_to_try = []
-            if clean_title and clean_author and clean_author.lower() not in clean_title.lower():
-                queries_to_try.append(f"{clean_title} {clean_author}")
-            if clean_title:
-                queries_to_try.append(clean_title)
-            queries_to_try.append(title)
+                target = getattr(payload.track, "uri", None)
+                if not target or not target.startswith("http"):
+                    target = getattr(payload.track, "identifier", None)
+                if not target or not target.startswith("http"):
+                    target = f"{clean_title} {clean_author}".strip() or title
 
-            fallback_results = None
-            for q in queries_to_try:
-                try:
-                    logger.info("Attempting seamless audio recovery for: '%s'", q)
-                    fallback_results = await wavelink.Playable.search(q, source=wavelink.TrackSource.SoundCloud)
-                    if fallback_results:
-                        break
-                except Exception as search_err:
-                    logger.debug("Recovery search '%s' failed: %s", q, search_err)
-                    continue
+                logger.info("Attempting seamless audio recovery for '%s' using local stream proxy", target)
+                requester = player.current_harmoni_track.requester if player.current_harmoni_track else None
+                recovered_track = await server.resolve_playable(target, requester=requester)
 
-            if fallback_results:
-                target_track = fallback_results[0]
-                from music.track import HarmoniXTrack
-
-                # Preserve user's original track identity so UI displays the expected song
-                player.current_harmoni_track = HarmoniXTrack(
-                    playable=target_track,
-                    requester=player.current_harmoni_track.requester if player.current_harmoni_track else None,
-                    album="HarmoniX Stream",
-                    source_name="harmonix",
-                )
-                await player.play(target_track, add_history=False)
-                asyncio.create_task(player.refresh_controller())
-                logger.info("Successfully recovered audio playback for '%s' seamlessly", title)
-                return
+                if recovered_track:
+                    player.current_harmoni_track = recovered_track
+                    await player.play(recovered_track.playable, add_history=False)
+                    asyncio.create_task(player.refresh_controller())
+                    logger.info("Successfully recovered audio playback for '%s' seamlessly", title)
+                    return
         except Exception as recovery_err:
             logger.error("Audio stream recovery failed: %s", recovery_err)
 

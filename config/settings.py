@@ -48,6 +48,14 @@ class Settings(BaseSettings):
         default=60,
         description="Inactivity timeout before node reconnect retry."
     )
+    STREAM_PROXY_HOST: str = Field(
+        default="127.0.0.1",
+        description="Host/IP used by Lavalink to reach internal audio stream proxy."
+    )
+    STREAM_PROXY_PORT: int = Field(
+        default=2334,
+        description="Port for internal audio stream proxy to bypass YouTube streaming restrictions."
+    )
 
     # Spotify API Integration (Optional but recommended for rich metadata)
     SPOTIFY_CLIENT_ID: Optional[str] = Field(

@@ -8,7 +8,7 @@ from typing import Optional, List, TYPE_CHECKING
 from music.player import HarmoniXPlayer
 from music.sources import PlaylistResult
 from utils.permissions import require_voice, check_voice_state, has_dj_permissions
-from utils.validators import parse_time_to_seconds, format_duration
+from utils.validators import parse_time_to_seconds, format_duration, sanitize_youtube_url
 from ui.embeds import (
     create_track_queued_embed,
     create_playlist_queued_embed,
@@ -52,11 +52,11 @@ class MusicCog(commands.Cog, name="Music"):
         # Collect provided queries
         inputs: List[str] = []
         if url and url.strip():
-            inputs.append(url.strip())
+            inputs.append(sanitize_youtube_url(url.strip()))
         if song and song.strip():
             inputs.append(song.strip())
         if query and query.strip() and not inputs:
-            inputs.append(query.strip())
+            inputs.append(sanitize_youtube_url(query.strip()))
 
         if not inputs:
             await interaction.response.send_message(

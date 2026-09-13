@@ -15,28 +15,40 @@ class HarmoniXTrack:
         requester: Optional[discord.Member] = None,
         album: Optional[str] = None,
         source_name: Optional[str] = None,
+        title: Optional[str] = None,
+        author: Optional[str] = None,
+        length: Optional[int] = None,
+        uri: Optional[str] = None,
+        artwork: Optional[str] = None,
     ):
         self.playable = playable
         self.requester = requester
         self.album = album or "Unknown Album"
         self.source_name = source_name or getattr(playable, "source", "unknown")
+        self._custom_title = title
+        self._custom_author = author
+        self._custom_length = length
+        self._custom_uri = uri
+        self._custom_artwork = artwork
 
     @property
     def title(self) -> str:
-        return getattr(self.playable, "title", "Unknown Title")
+        return self._custom_title or getattr(self.playable, "title", "Unknown Title")
 
     @property
     def author(self) -> str:
-        return getattr(self.playable, "author", "Unknown Artist")
+        return self._custom_author or getattr(self.playable, "author", "Unknown Artist")
 
     @property
     def length(self) -> int:
         """Length in milliseconds."""
+        if self._custom_length is not None:
+            return self._custom_length
         return getattr(self.playable, "length", 0)
 
     @property
     def uri(self) -> str:
-        return getattr(self.playable, "uri", "") or ""
+        return self._custom_uri or getattr(self.playable, "uri", "") or ""
 
     @property
     def identifier(self) -> str:
@@ -44,7 +56,7 @@ class HarmoniXTrack:
 
     @property
     def artwork(self) -> Optional[str]:
-        return getattr(self.playable, "artwork", None)
+        return self._custom_artwork or getattr(self.playable, "artwork", None)
 
     @property
     def duration_str(self) -> str:

@@ -30,6 +30,9 @@ def test_filter_presets():
     assert filters.timescale.payload["pitch"] == 1.3
     assert filters.timescale.payload["speed"] == 1.25
 
+    apply_preset(filters, FilterPreset.HIFI)
+    assert len(filters.equalizer.payload) > 0
+
     apply_preset(filters, FilterPreset.FLAT)
     assert filters.timescale.payload == {}
 

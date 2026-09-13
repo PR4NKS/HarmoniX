@@ -10,6 +10,7 @@ from utils.validators import (
     format_duration,
     parse_time_to_seconds,
     create_progress_bar,
+    sanitize_youtube_url,
 )
 from music.sources import (
     YouTubeSource,
@@ -32,6 +33,15 @@ def test_url_detection():
     assert is_soundcloud_url(sc_url) is True
     assert is_apple_music_url(am_url) is True
     assert is_valid_url(stream_url) is True
+
+
+def test_sanitize_youtube_url():
+    mix_url = "https://www.youtube.com/watch?v=GX9x62kFaVU&list=RDGX9x62kFaVU"
+    clean_url = sanitize_youtube_url(mix_url)
+    assert clean_url == "https://www.youtube.com/watch?v=GX9x62kFaVU"
+
+    real_playlist = "https://www.youtube.com/playlist?list=PLrAlPz3p5A_12345"
+    assert sanitize_youtube_url(real_playlist) == real_playlist
 
 
 def test_source_adapter_routing():
@@ -68,3 +78,50 @@ def test_progress_bar():
     bar = create_progress_bar(50, 100, length=10)
     assert "🔘" in bar
     assert len(bar) == 10
+
+
+def test_harmonix_track_custom_metadata():
+    from unittest.mock import MagicMock
+    from music.track import HarmoniXTrack
+
+    mock_playable = MagicMock()
+    mock_playable.title = "Raw Title"
+    mock_playable.author = "Raw Author"
+    mock_playable.length = 1000
+    mock_playable.uri = "http://127.0.0.1:2334/stream/123.webm"
+    mock_playable.artwork = None
+
+    # Track with custom overrides
+    track = HarmoniXTrack(
+        playable=mock_playable,
+        source_name="youtube",
+        title="Custom Song",
+        author="Custom Artist",
+        length=180000,
+        uri="https://www.youtube.com/watch?v=123",
+        artwork="https://img.youtube.com/vi/123/default.jpg",
+    )
+
+    assert track.title == "Custom Song"
+    assert track.author == "Custom Artist"
+    assert track.length == 180000
+    assert track.duration_str == "03:00"
+    assert track.uri == "https://www.youtube.com/watch?v=123"
+    assert track.artwork == "https://img.youtube.com/vi/123/default.jpg"
+
+
+def test_stream_server_singleton():
+    from services.stream_server import StreamServer, get_stream_server
+
+    server = StreamServer(port=2334)
+    assert get_stream_server() is server
+    assert server.port == 2334
+
+
+def test_spotify_url_parsing():
+    sp = SpotifySource()
+    parsed = sp._parse_url("https://open.spotify.com/playlist/37i9dQZF1EIZNOFIsiFGWV")
+    assert parsed == ("playlist", "37i9dQZF1EIZNOFIsiFGWV")
+
+    parsed_track = sp._parse_url("https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT")
+    assert parsed_track == ("track", "4cOdK2wGLETKBW3PvgPWqT")

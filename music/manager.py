@@ -120,6 +120,15 @@ class MusicManager:
         if isinstance(interaction.channel, discord.abc.Messageable):
             player.text_channel = interaction.channel
 
+        # Optimize voice channel bitrate for high-fidelity audio if permissions allow
+        if player.channel and hasattr(player.channel, "edit") and interaction.guild and hasattr(interaction.guild, "bitrate_limit"):
+            try:
+                target_bitrate = int(interaction.guild.bitrate_limit)
+                if player.channel.bitrate < target_bitrate:
+                    await player.channel.edit(bitrate=target_bitrate)
+            except Exception:
+                pass
+
         return player
 
     async def resolve_query(
@@ -139,10 +148,12 @@ class MusicManager:
                 except Exception as e:
                     logger.error("Source adapter %s encountered error: %s", source.name, e)
 
-        # Fallback to default YouTube source
-        try:
-            return await self._sources[-1].resolve(clean_query, requester=requester, max_results=max_results)
-        except Exception as e:
-            logger.error("Fallback source failed: %s", e)
+        # Fallback to default search/source only if it can handle this query (prevent routing platform URLs to YouTube)
+        fallback_source = self._sources[-1]
+        if fallback_source.can_handle(clean_query):
+            try:
+                return await fallback_source.resolve(clean_query, requester=requester, max_results=max_results)
+            except Exception as e:
+                logger.error("Fallback source failed: %s", e)
 
         return []
