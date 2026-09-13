@@ -1,5 +1,6 @@
 """YouTube and YouTube Music source adapter."""
 
+import asyncio
 from typing import Optional, List, Union
 import discord
 import wavelink
@@ -36,7 +37,40 @@ class YouTubeSource(BaseAudioSource):
         query_str = query.strip()
 
         if is_valid_url(query_str):
-            results = await wavelink.Playable.search(query_str)
+            try:
+                results = await wavelink.Playable.search(query_str)
+            except Exception as e:
+                logger.warning("Lavalink direct URL resolution failed for %s: %s", query_str, e)
+                results = None
+
+            # Fallback to direct audio stream extraction via yt-dlp for YouTube URLs
+            if not results and ("youtube.com" in query_str or "youtu.be" in query_str):
+                try:
+                    import yt_dlp
+
+                    def extract():
+                        ydl_opts = {
+                            "format": "bestaudio/best",
+                            "quiet": True,
+                            "no_warnings": True,
+                            "skip_download": True,
+                        }
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            return ydl.extract_info(query_str, download=False)
+
+                    info = await asyncio.to_thread(extract)
+                    stream_url = info.get("url")
+                    if stream_url:
+                        results = await wavelink.Playable.search(stream_url)
+                        if results:
+                            # Keep original title and author
+                            for r in results:
+                                if hasattr(r, "_title") and info.get("title"):
+                                    r._title = info["title"]
+                                if hasattr(r, "_author") and info.get("uploader"):
+                                    r._author = info["uploader"]
+                except Exception as yt_err:
+                    logger.warning("yt-dlp fallback extraction for %s failed: %s", query_str, yt_err)
         else:
             # Determine search order based on configuration
             if "sc" in self.default_search_type.lower():

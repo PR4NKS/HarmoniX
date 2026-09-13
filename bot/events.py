@@ -63,57 +63,51 @@ def setup_events(bot: "HarmoniXBot") -> None:  # type: ignore
         author = getattr(payload.track, "author", "")
         logger.warning("Audio playback error for %s (source: %s): %s", title, source, payload.exception)
 
-        # If YouTube / YouTube Music blocks the stream, automatically fallback to SoundCloud
-        if "youtube" in source or source in ("unknown", "http", ""):
-            try:
-                import re
-                clean_title = re.sub(r'[\(\[\{].*?[\)\]\}]', '', title)
-                clean_title = re.sub(r'\s*-\s*Topic', '', clean_title, flags=re.IGNORECASE).strip()
-                clean_author = re.sub(r'\s*-\s*Topic', '', author, flags=re.IGNORECASE).strip()
+        # Attempt seamless stream recovery using SoundCloud search
+        try:
+            import re
 
-                queries_to_try = []
-                if clean_title and clean_author and clean_author.lower() not in clean_title.lower():
-                    queries_to_try.append(f"{clean_title} {clean_author}")
-                if clean_title:
-                    queries_to_try.append(clean_title)
-                queries_to_try.append(title)
+            clean_title = re.sub(r'[\(\[\{].*?[\)\]\}]', '', title)
+            clean_title = re.sub(r'\s*-\s*Topic', '', clean_title, flags=re.IGNORECASE).strip()
+            clean_author = re.sub(r'\s*-\s*Topic', '', author, flags=re.IGNORECASE).strip()
 
-                fallback_results = None
-                for q in queries_to_try:
-                    try:
-                        logger.info("Attempting automatic SoundCloud stream fallback for: '%s'", q)
-                        fallback_results = await wavelink.Playable.search(q, source=wavelink.TrackSource.SoundCloud)
-                        if fallback_results:
-                            break
-                    except Exception as search_err:
-                        logger.debug("Fallback search '%s' failed: %s", q, search_err)
-                        continue
+            queries_to_try = []
+            if clean_title and clean_author and clean_author.lower() not in clean_title.lower():
+                queries_to_try.append(f"{clean_title} {clean_author}")
+            if clean_title:
+                queries_to_try.append(clean_title)
+            queries_to_try.append(title)
 
-                if fallback_results:
-                    target_track = fallback_results[0]
-                    from music.track import HarmoniXTrack
-                    player.current_harmoni_track = HarmoniXTrack(
-                        playable=target_track,
-                        requester=player.current_harmoni_track.requester if player.current_harmoni_track else None,
-                        album="SoundCloud Fallback",
-                        source_name="soundcloud",
-                    )
-                    await player.play(target_track, add_history=False)
-                    asyncio.create_task(player.refresh_controller())
+            fallback_results = None
+            for q in queries_to_try:
+                try:
+                    logger.info("Attempting seamless audio recovery for: '%s'", q)
+                    fallback_results = await wavelink.Playable.search(q, source=wavelink.TrackSource.SoundCloud)
+                    if fallback_results:
+                        break
+                except Exception as search_err:
+                    logger.debug("Recovery search '%s' failed: %s", q, search_err)
+                    continue
 
-                    if player.text_channel:
-                        try:
-                            embed = create_success_embed(
-                                "Playback Recovered",
-                                f"Recovered stream for **{target_track.title}** via SoundCloud.",
-                            )
-                            await player.text_channel.send(embed=embed)
-                        except Exception:
-                            pass
-                    return
-            except Exception as fb_err:
-                logger.error("SoundCloud fallback failed: %s", fb_err)
+            if fallback_results:
+                target_track = fallback_results[0]
+                from music.track import HarmoniXTrack
 
+                # Preserve user's original track identity so UI displays the expected song
+                player.current_harmoni_track = HarmoniXTrack(
+                    playable=target_track,
+                    requester=player.current_harmoni_track.requester if player.current_harmoni_track else None,
+                    album="HarmoniX Stream",
+                    source_name="harmonix",
+                )
+                await player.play(target_track, add_history=False)
+                asyncio.create_task(player.refresh_controller())
+                logger.info("Successfully recovered audio playback for '%s' seamlessly", title)
+                return
+        except Exception as recovery_err:
+            logger.error("Audio stream recovery failed: %s", recovery_err)
+
+        # Only notify and skip if audio could not be recovered at all
         if player.text_channel:
             try:
                 embed = create_error_embed(

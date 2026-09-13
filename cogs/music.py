@@ -3,7 +3,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, List, TYPE_CHECKING
 
 from music.player import HarmoniXPlayer
 from music.sources import PlaylistResult
@@ -35,53 +35,87 @@ class MusicCog(commands.Cog, name="Music"):
     def __init__(self, bot: "HarmoniXBot"):
         self.bot = bot
 
-    @app_commands.command(name="play", description="Play a song, playlist, or stream from YouTube, Spotify, etc.")
-    @app_commands.describe(query="Song title, artist, or URL (YouTube, Spotify, SoundCloud, etc.)")
-    async def play(self, interaction: discord.Interaction, query: str) -> None:
-        """Enqueue or immediately play audio from a query or URL."""
+    @app_commands.command(name="play", description="Play a song, playlist, or stream by title or direct URL.")
+    @app_commands.describe(
+        song="Song title, artist name, or search query to look up",
+        url="Direct link/URL (YouTube, Spotify, SoundCloud, Apple Music, etc.)",
+        query="Song title, artist, or URL (legacy/fallback option)",
+    )
+    async def play(
+        self,
+        interaction: discord.Interaction,
+        song: Optional[str] = None,
+        url: Optional[str] = None,
+        query: Optional[str] = None,
+    ) -> None:
+        """Enqueue or immediately play audio from a song name, direct URL, or both."""
+        # Collect provided queries
+        inputs: List[str] = []
+        if url and url.strip():
+            inputs.append(url.strip())
+        if song and song.strip():
+            inputs.append(song.strip())
+        if query and query.strip() and not inputs:
+            inputs.append(query.strip())
+
+        if not inputs:
+            await interaction.response.send_message(
+                embed=create_error_embed(
+                    "Missing Input",
+                    "Please provide a **song** name or a **url** to play!\n"
+                    "• `/play song: <song title or artist>`\n"
+                    "• `/play url: <direct link>`\n"
+                    "• `/play song: <title> url: <link>` *(queues both)*",
+                ),
+                ephemeral=True,
+            )
+            return
+
         await interaction.response.defer()
 
         # Connect or fetch player
         player = await self.bot.music.get_or_create_player(interaction, connect=True)
 
-        # Resolve query through registered sources
-        result = await self.bot.music.resolve_query(query, requester=interaction.user)  # type: ignore
+        added_messages: List[str] = []
+        for target in inputs:
+            result = await self.bot.music.resolve_query(target, requester=interaction.user)  # type: ignore
+            if not result:
+                added_messages.append(f"❌ Could not find audio for `{target}`.")
+                continue
 
-        if not result:
-            await interaction.followup.send(
-                embed=create_error_embed("Not Found", f"Could not find any playable audio for `{query}`.")
-            )
-            return
+            is_playing = player.playing
 
-        is_playing = player.playing
+            if isinstance(result, PlaylistResult):
+                added_count = await player.queue.put_tracks(result.tracks)
+                if not is_playing:
+                    await player.play_next()
 
-        if isinstance(result, PlaylistResult):
-            added_count = await player.queue.put_tracks(result.tracks)
-            if not is_playing:
-                await player.play_next()
-
-            thumbnail = result.tracks[0].artwork if result.tracks else None
-            embed = create_playlist_queued_embed(
-                playlist_name=result.name,
-                track_count=added_count,
-                requester=interaction.user,  # type: ignore
-                thumbnail_url=thumbnail,
-            )
-            await interaction.followup.send(embed=embed)
-
-        else:
-            # Single track or list of results
-            track = result[0]
-            await player.queue.put(track)
-
-            if not is_playing:
-                await player.play_next()
-                embed = create_success_embed("Now Playing", f"Playing [{track.title}]({track.uri})!")
+                thumbnail = result.tracks[0].artwork if result.tracks else None
+                embed = create_playlist_queued_embed(
+                    playlist_name=result.name,
+                    track_count=added_count,
+                    requester=interaction.user,  # type: ignore
+                    thumbnail_url=thumbnail,
+                )
                 await interaction.followup.send(embed=embed)
+
             else:
-                pos = len(player.queue)
-                embed = create_track_queued_embed(track, position=pos)
-                await interaction.followup.send(embed=embed)
+                track = result[0]
+                await player.queue.put(track)
+
+                if not is_playing and not player.playing:
+                    await player.play_next()
+                    embed = create_success_embed("Now Playing", f"Playing [{track.title}]({track.uri})!")
+                    await interaction.followup.send(embed=embed)
+                else:
+                    pos = len(player.queue)
+                    embed = create_track_queued_embed(track, position=pos)
+                    await interaction.followup.send(embed=embed)
+
+        if added_messages and not player.playing and len(player.queue) == 0:
+            await interaction.followup.send(
+                embed=create_error_embed("Not Found", "\n".join(added_messages))
+            )
 
     @app_commands.command(name="join", description="Connect HarmoniX to your current voice channel.")
     async def join(self, interaction: discord.Interaction) -> None:
